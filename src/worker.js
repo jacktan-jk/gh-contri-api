@@ -84,25 +84,18 @@ const startOfWeek = (date) => {
 
 const addDays = (date, days) => new Date(date.getTime() + days * DAY_MS);
 
-const fetchContributionData = async (username) => {
-  const url = `https://github.com/users/${encodeURIComponent(
-    username,
-  )}/contributions`;
+const buildCacheKey = (username) =>
+  new Request(`https://gh-contri-api.internal/cache/${encodeURIComponent(username)}`);
 
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'gh-contri-api-worker',
-      Accept: 'text/html',
-    },
-  });
+const persistCachedPage = async (cache, cacheKey, payload) =>
+  cache.put(
+    cacheKey,
+    new Response(JSON.stringify(payload), {
+      headers: { 'Content-Type': 'application/json' },
+    }),
+  );
 
-  if (!response.ok) {
-    throw new Error(`GitHub responded with ${response.status}`);
-  }
-
-  const html = await response.text();
-
-  // original rect parsing (date + level)
+const parseContributionHtml = (html) => {
   const cells = [
     ...html.matchAll(
       /data-date="([0-9]{4}-[0-9]{2}-[0-9]{2})"[^>]*data-level="([0-4])"/g,
@@ -118,7 +111,6 @@ const fetchContributionData = async (username) => {
 
   let totalContributions;
 
-  // try to use #js-contribution-activity-description
   const descMatch = html.match(
     /<div[^>]*id="js-contribution-activity-description"[^>]*>([\s\S]*?)<\/div>/,
   );
@@ -132,13 +124,11 @@ const fetchContributionData = async (username) => {
     const numMatch = rawText.match(/([0-9][0-9,]*)\s+contributions?/i);
     if (numMatch) {
       totalContributions = Number(numMatch[1].replace(/,/g, ''));
-
     } else if (/no contributions?/i.test(rawText)) {
       totalContributions = 0;
     }
   }
 
-  // fallback: old text pattern, but allow comma-separated numbers
   if (!Number.isFinite(totalContributions)) {
     const totalMatch = html.match(
       /([0-9][0-9,]*)\s+contributions?\s+in\s+the\s+last\s+year/i,
@@ -148,12 +138,67 @@ const fetchContributionData = async (username) => {
     }
   }
 
-  // final fallback: count non-zero days
   if (!Number.isFinite(totalContributions)) {
     totalContributions = contributions.filter((day) => day.level > 0).length;
   }
 
   return { contributions, totalContributions };
+};
+
+const fetchContributionData = async (username) => {
+  const url = `https://github.com/users/${encodeURIComponent(
+    username,
+  )}/contributions`;
+  const cache = caches.default;
+  const cacheKey = buildCacheKey(username);
+  const cachedResponse = await cache.match(cacheKey);
+  const cachedData = cachedResponse ? await cachedResponse.json() : {};
+
+  const headers = {
+    'User-Agent': 'gh-contri-api-worker',
+    Accept: 'text/html',
+  };
+
+  if (cachedData.etag) {
+    headers['If-None-Match'] = cachedData.etag;
+  }
+
+  if (cachedData.lastModified) {
+    headers['If-Modified-Since'] = cachedData.lastModified;
+  }
+
+  const response = await fetch(url, { headers });
+
+  if (response.status === 304) {
+    if (!cachedData.html) {
+      throw new Error('Received 304 from GitHub without cached HTML available.');
+    }
+
+    const etag = response.headers.get('ETag') ?? cachedData.etag;
+    const lastModified = response.headers.get('Last-Modified') ?? cachedData.lastModified;
+
+    if (etag !== cachedData.etag || lastModified !== cachedData.lastModified) {
+      await persistCachedPage(cache, cacheKey, {
+        html: cachedData.html,
+        etag,
+        lastModified,
+      });
+    }
+
+    return parseContributionHtml(cachedData.html);
+  }
+
+  if (!response.ok) {
+    throw new Error(`GitHub responded with ${response.status}`);
+  }
+
+  const html = await response.text();
+  const etag = response.headers.get('ETag') ?? cachedData.etag;
+  const lastModified = response.headers.get('Last-Modified') ?? cachedData.lastModified;
+
+  await persistCachedPage(cache, cacheKey, { html, etag, lastModified });
+
+  return parseContributionHtml(html);
 };
 
 const buildWeeks = (contributions) => {
