@@ -88,19 +88,48 @@ const fetchContributionData = async (username) => {
   const url = `https://github.com/users/${encodeURIComponent(
     username,
   )}/contributions`;
+  const cacheKey = new Request(url);
+  const headers = {
+    'User-Agent': 'gh-contri-api-worker',
+    Accept: 'text/html',
+  };
 
-  const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'gh-contri-api-worker',
-      Accept: 'text/html',
-    },
-  });
+  let html;
 
-  if (!response.ok) {
-    throw new Error(`GitHub responded with ${response.status}`);
+  try {
+    const cachedResponse = await caches.default.match(cacheKey);
+    if (cachedResponse) {
+      html = await cachedResponse.text();
+    }
+  } catch (error) {
+    // ignore cache read errors and fallback to live fetch
   }
 
-  const html = await response.text();
+  if (!html) {
+    const response = await fetch(url, { headers });
+
+    if (!response.ok) {
+      throw new Error(`GitHub responded with ${response.status}`);
+    }
+
+    html = await response.text();
+
+    const cacheHeaders = new Headers({
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=2700, stale-while-revalidate=900',
+    });
+
+    try {
+      await caches.default.put(
+        cacheKey,
+        new Response(html, {
+          headers: cacheHeaders,
+        }),
+      );
+    } catch (error) {
+      // ignore cache write errors to avoid blocking live responses
+    }
+  }
 
   // original rect parsing (date + level)
   const cells = [
