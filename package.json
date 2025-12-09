@@ -1,0 +1,9 @@
+{
+  "name": "gh-contri-api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check src/worker.js"
+  }
+}
