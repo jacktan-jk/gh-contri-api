@@ -1,7 +1,7 @@
 # gh-contri-api
 
 Cloudflare Worker that merges the functionality of the original `githubchart-api`, `githubchart`, and `deno-github-contributions-api` projects into a single JavaScript service. It renders a GitHub-style contribution chart as an SVG without relying on CORS proxies.
-*http://127.0.0.1:8787/978934/393937/jacktan-jk
+
 ## Usage
 
 Deploy the worker and access it with the following URL format:

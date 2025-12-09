@@ -281,7 +281,7 @@ const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}">
   <rect width="100%" height="100%" fill="transparent" />
-  <text x="0" y="20" font-size="15" font-weight="bold" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${totalContributions} contributions in the last year</text>
+  <text x="0" y="20" font-size="10" font-weight="bold" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${totalContributions} contributions in the last year</text>
   ${monthLabels}
   ${dayLabels}
   ${cells}
