@@ -298,6 +298,13 @@ const sendError = (message, status = 500) =>
 export default {
   async fetch(request) {
     try {
+      const cache = caches.default;
+      const cachedResponse = await cache.match(request);
+
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
       const { pathname } = new URL(request.url);
 
       if (pathname === '/favicon.ico') {
@@ -340,12 +347,16 @@ export default {
       }
 
       const svg = renderSvg({ weeks, scheme, username, totalContributions });
-      return new Response(svg, {
+      const response = new Response(svg, {
         headers: {
           'Content-Type': 'image/svg+xml; charset=utf-8',
-          'Cache-Control': 'public, max-age=86400',
+          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=3600',
         },
       });
+
+      await cache.put(request, response.clone());
+
+      return response;
     } catch (error) {
       return sendError(error.message, /Invalid .*color/.test(error.message) ? 400 : 500);
     }
