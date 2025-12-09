@@ -1,0 +1,3 @@
+[submodule "deno-github-contributions-api"]
+	path = deno-github-contributions-api
+	url = https://github.com/kawarimidoll/deno-github-contributions-api.git
