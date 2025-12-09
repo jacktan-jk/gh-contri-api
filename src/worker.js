@@ -84,6 +84,12 @@ const startOfWeek = (date) => {
 
 const addDays = (date, days) => new Date(date.getTime() + days * DAY_MS);
 
+const CACHE_MAX_AGE_MS = 60 * 60 * 1000;
+const CACHE_REVALIDATE_MS = 30 * 60 * 1000;
+
+const contributionCache = new Map();
+const svgCache = new Map();
+
 const fetchContributionData = async (username) => {
   const url = `https://github.com/users/${encodeURIComponent(
     username,
@@ -154,6 +160,37 @@ const fetchContributionData = async (username) => {
   }
 
   return { contributions, totalContributions };
+};
+
+const getContributionData = async (username) => {
+  const cached = contributionCache.get(username);
+
+  const recordWithMeta = (data, fetchedAt, cacheStatus) => {
+    contributionCache.set(username, { data, fetchedAt });
+    return { ...data, fetchedAt, cacheStatus };
+  };
+
+  const now = Date.now();
+
+  if (cached) {
+    const age = now - cached.fetchedAt;
+
+    if (age < CACHE_REVALIDATE_MS) {
+      return { ...cached.data, fetchedAt: cached.fetchedAt, cacheStatus: 'hit' };
+    }
+
+    if (age < CACHE_MAX_AGE_MS) {
+      try {
+        const data = await fetchContributionData(username);
+        return recordWithMeta(data, Date.now(), 'refreshed');
+      } catch (error) {
+        return { ...cached.data, fetchedAt: cached.fetchedAt, cacheStatus: 'stale-fallback' };
+      }
+    }
+  }
+
+  const data = await fetchContributionData(username);
+  return recordWithMeta(data, Date.now(), 'miss');
 };
 
 const buildWeeks = (contributions) => {
@@ -289,6 +326,27 @@ const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
 </svg>`;
 };
 
+const buildSvgCacheKey = ({ baseColor, backgroundColor, username }) =>
+  [baseColor || 'default', backgroundColor || 'bg', username].join('|');
+
+const buildSvgResponse = ({
+  svg,
+  svgCacheStatus,
+  svgGeneratedAt,
+  dataFetchedAt,
+  dataCacheStatus,
+}) =>
+  new Response(svg, {
+    headers: {
+      'Content-Type': 'image/svg+xml; charset=utf-8',
+      'Cache-Control': 'public, max-age=3600',
+      'X-SVG-Cache': svgCacheStatus,
+      'X-SVG-Generated-At': new Date(svgGeneratedAt).toISOString(),
+      'X-Data-Cache': dataCacheStatus,
+      'X-Data-Fetched-At': new Date(dataFetchedAt).toISOString(),
+    },
+  });
+
 const sendError = (message, status = 500) =>
   new Response(message, {
     status,
@@ -332,7 +390,48 @@ export default {
       }
 
       const scheme = buildScheme(baseColor, backgroundColor);
-      const { contributions, totalContributions } = await fetchContributionData(username);
+      const cacheKey = buildSvgCacheKey({ baseColor, backgroundColor, username });
+      const now = Date.now();
+      const cachedSvg = svgCache.get(cacheKey);
+
+      if (cachedSvg) {
+        const svgAge = now - cachedSvg.generatedAt;
+
+        if (svgAge < CACHE_REVALIDATE_MS) {
+          return buildSvgResponse({
+            svg: cachedSvg.svg,
+            svgCacheStatus: 'hit',
+            svgGeneratedAt: cachedSvg.generatedAt,
+            dataFetchedAt: cachedSvg.dataFetchedAt,
+            dataCacheStatus: cachedSvg.dataCacheStatus,
+          });
+        }
+      }
+
+      let contributions;
+      let totalContributions;
+      let fetchedAt;
+      let dataCacheStatus = 'miss';
+
+      try {
+        const data = await getContributionData(username);
+        contributions = data.contributions;
+        totalContributions = data.totalContributions;
+        fetchedAt = data.fetchedAt;
+        dataCacheStatus = data.cacheStatus;
+      } catch (error) {
+        if (cachedSvg && now - cachedSvg.generatedAt < CACHE_MAX_AGE_MS) {
+          return buildSvgResponse({
+            svg: cachedSvg.svg,
+            svgCacheStatus: 'stale-fallback',
+            svgGeneratedAt: cachedSvg.generatedAt,
+            dataFetchedAt: cachedSvg.dataFetchedAt,
+            dataCacheStatus: cachedSvg.dataCacheStatus,
+          });
+        }
+        throw error;
+      }
+
       const weeks = buildWeeks(contributions);
 
       if (!weeks.length) {
@@ -340,11 +439,22 @@ export default {
       }
 
       const svg = renderSvg({ weeks, scheme, username, totalContributions });
-      return new Response(svg, {
-        headers: {
-          'Content-Type': 'image/svg+xml; charset=utf-8',
-          'Cache-Control': 'public, max-age=86400',
-        },
+      const generatedAt = Date.now();
+      const svgCacheStatus = cachedSvg ? 'refreshed' : 'miss';
+
+      svgCache.set(cacheKey, {
+        svg,
+        generatedAt,
+        dataFetchedAt: fetchedAt,
+        dataCacheStatus,
+      });
+
+      return buildSvgResponse({
+        svg,
+        svgCacheStatus,
+        svgGeneratedAt: generatedAt,
+        dataFetchedAt: fetchedAt,
+        dataCacheStatus,
       });
     } catch (error) {
       return sendError(error.message, /Invalid .*color/.test(error.message) ? 400 : 500);
