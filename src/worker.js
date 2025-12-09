@@ -121,13 +121,13 @@ const fetchContributionData = async (username) => {
   const html = await response.text();
   const cells = [
     ...html.matchAll(
-      /data-date="([0-9]{4}-[0-9]{2}-[0-9]{2})"(?=[^>]*data-level="([0-4])")(?=[^>]*data-count="(\d+)")/g,
+      /<rect[^>]*?(?=\sdata-date="([0-9]{4}-[0-9]{2}-[0-9]{2})")(?=[^>]*?data-count="(\d+)")(?=[^>]*?data-level="([0-4])")[^>]*?>/g,
     ),
   ];
-  const contributions = cells.map(([_, date, level, count]) => ({
+  const contributions = cells.map(([_, date, count, level]) => ({
     date,
-    level: Number(level),
     contributionCount: Number(count),
+    level: Number(level),
   }));
 
   contributions.sort((a, b) => a.date.localeCompare(b.date));
