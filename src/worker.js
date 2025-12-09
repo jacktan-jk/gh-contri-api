@@ -1,8 +1,8 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CELL_SIZE = 10;
 const CELL_GAP = 2;
-const LEFT_PADDING = 16;
-const TOP_PADDING = 32;
+const LEFT_PADDING = 30;
+const TOP_PADDING = 56; // increased to give space for header + month labels
 const COLOR_SCHEMES = {
   default: ['#eeeeee', '#d6e685', '#8cc665', '#44a340', '#1e6823'],
   halloween: ['#eeeeee', '#ffee4a', '#ffc501', '#fe9600', '#03001c'],
@@ -74,7 +74,9 @@ const buildScheme = (baseColor, backgroundColor) => {
 };
 
 const startOfWeek = (date) => {
-  const copy = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const copy = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+  );
   const day = copy.getUTCDay();
   const diff = day * DAY_MS;
   return new Date(copy.getTime() - diff);
@@ -83,7 +85,10 @@ const startOfWeek = (date) => {
 const addDays = (date, days) => new Date(date.getTime() + days * DAY_MS);
 
 const fetchContributionData = async (username) => {
-  const url = `https://github.com/users/${encodeURIComponent(username)}/contributions`;
+  const url = `https://github.com/users/${encodeURIComponent(
+    username,
+  )}/contributions`;
+
   const response = await fetch(url, {
     headers: {
       'User-Agent': 'gh-contri-api-worker',
@@ -96,7 +101,14 @@ const fetchContributionData = async (username) => {
   }
 
   const html = await response.text();
-  const cells = [...html.matchAll(/data-date="([0-9]{4}-[0-9]{2}-[0-9]{2})"[^>]*data-level="([0-4])"/g)];
+
+  // original rect parsing (date + level)
+  const cells = [
+    ...html.matchAll(
+      /data-date="([0-9]{4}-[0-9]{2}-[0-9]{2})"[^>]*data-level="([0-4])"/g,
+    ),
+  ];
+
   const contributions = cells.map(([_, date, level]) => ({
     date,
     level: Number(level),
@@ -104,8 +116,42 @@ const fetchContributionData = async (username) => {
 
   contributions.sort((a, b) => a.date.localeCompare(b.date));
 
-  const totalMatch = html.match(/(\d+)\s+contributions?\s+in\s+the\s+last\s+year/i);
-  const totalContributions = totalMatch ? Number(totalMatch[1]) : contributions.filter((day) => day.level > 0).length;
+  let totalContributions;
+
+  // try to use #js-contribution-activity-description
+  const descMatch = html.match(
+    /<div[^>]*id="js-contribution-activity-description"[^>]*>([\s\S]*?)<\/div>/,
+  );
+
+  if (descMatch) {
+    const rawText = descMatch[1]
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const numMatch = rawText.match(/([0-9][0-9,]*)\s+contributions?/i);
+    if (numMatch) {
+      totalContributions = Number(numMatch[1].replace(/,/g, ''));
+
+    } else if (/no contributions?/i.test(rawText)) {
+      totalContributions = 0;
+    }
+  }
+
+  // fallback: old text pattern, but allow comma-separated numbers
+  if (!Number.isFinite(totalContributions)) {
+    const totalMatch = html.match(
+      /([0-9][0-9,]*)\s+contributions?\s+in\s+the\s+last\s+year/i,
+    );
+    if (totalMatch) {
+      totalContributions = Number(totalMatch[1].replace(/,/g, ''));
+    }
+  }
+
+  // final fallback: count non-zero days
+  if (!Number.isFinite(totalContributions)) {
+    totalContributions = contributions.filter((day) => day.level > 0).length;
+  }
 
   return { contributions, totalContributions };
 };
@@ -145,23 +191,77 @@ const renderLegend = (scheme, x, y) => {
 
   return `
     <g aria-hidden="true">
-      <text x="${x - 36}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#FFFFFF">${labels[0]}</text>
+      <text x="${x - 36}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${labels[0]}</text>
       ${blocks}
-      <text x="${x + scheme.length * (CELL_SIZE + 2) + 4}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#FFFFFF">${labels[1]}</text>
+      <text x="${x + scheme.length * (CELL_SIZE + 2) + 4}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${labels[1]}</text>
     </g>`;
+};
+
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+const renderMonthLabels = (weeks) => {
+  if (!weeks.length) return '';
+
+  let lastMonth = -1;
+  const y = TOP_PADDING-5;
+  const parts = [];
+
+  weeks.forEach((week, weekIndex) => {
+    const firstDay = week[0];
+    const d = new Date(firstDay.date);
+    const month = d.getUTCMonth();
+    if (month !== lastMonth) {
+      const baseX = LEFT_PADDING + weekIndex * (CELL_SIZE + CELL_GAP) - 5;
+      const x = weekIndex === weeks.length - 1 ? baseX - 5 : baseX;
+      parts.push(
+        `<text x="${x}" y="${y}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${MONTH_NAMES[month]}</text>`,
+      );
+      lastMonth = month;
+    }
+  });
+
+  return parts.join('');
+};
+
+const renderDayLabels = () => {
+  const labels = [
+    { index: 1, text: 'Mon' },
+    { index: 3, text: 'Wed' },
+    { index: 5, text: 'Fri' },
+  ];
+
+  return labels
+    .map(({ index, text }) => {
+      const y = TOP_PADDING + index * (CELL_SIZE + CELL_GAP) + 8;
+      return `<text x="${LEFT_PADDING - 10}" y="${y}" font-size="9" text-anchor="end" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${text}</text>`;
+    })
+    .join('');
 };
 
 const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
   const graphWidth = weeks.length * (CELL_SIZE + CELL_GAP);
   const graphHeight = 7 * (CELL_SIZE + CELL_GAP);
-  const width = LEFT_PADDING + graphWidth + 16;
+  const width = LEFT_PADDING + graphWidth;
   const height = TOP_PADDING + graphHeight + 28;
 
   const cells = weeks
     .map((week, weekIndex) =>
       week
         .map((day, dayIndex) => {
-          const x = LEFT_PADDING + weekIndex * (CELL_SIZE + CELL_GAP);
+          const x = LEFT_PADDING + weekIndex * (CELL_SIZE + CELL_GAP) - 5;
           const y = TOP_PADDING + dayIndex * (CELL_SIZE + CELL_GAP);
           const color = scheme[day.level] ?? scheme[0];
           return `<rect x="${x}" y="${y}" width="${CELL_SIZE}" height="${CELL_SIZE}" fill="${color}" rx="2" data-date="${day.date}" />`;
@@ -170,16 +270,20 @@ const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
     )
     .join('');
 
-  const legendX = LEFT_PADDING + graphWidth - scheme.length * (CELL_SIZE + 2) - 56;
-  const legendY = TOP_PADDING + graphHeight + 12;
+  const legendX = LEFT_PADDING + graphWidth - scheme.length * (CELL_SIZE + 2) - 30;
+  const legendY = TOP_PADDING + graphHeight + 5;
 
   const label = `${totalContributions} contributions in the last year by ${username}`;
 
+  const monthLabels = renderMonthLabels(weeks);
+  const dayLabels = renderDayLabels();
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}">
-  <title>${label}</title>
   <rect width="100%" height="100%" fill="transparent" />
-  <text x="${LEFT_PADDING}" y="30" font-size="18" font-family="'Segoe UI', Tahoma, sans-serif" fill="#FFFFFF">${totalContributions} contributions in the last year</text>
+  <text x="0" y="20" font-size="15" font-weight="bold" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${totalContributions} contributions in the last year</text>
+  ${monthLabels}
+  ${dayLabels}
   ${cells}
   ${renderLegend(scheme, legendX, legendY)}
 </svg>`;
@@ -195,6 +299,16 @@ export default {
   async fetch(request) {
     try {
       const { pathname } = new URL(request.url);
+
+      if (pathname === '/favicon.ico') {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Cache-Control': 'public, max-age=86400',
+          },
+        });
+      }
+
       let parts = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
 
       if (!parts.length) {
