@@ -3,6 +3,9 @@ const CELL_SIZE = 10;
 const CELL_GAP = 2;
 const LEFT_PADDING = 30;
 const TOP_PADDING = 56; // increased to give space for header + month labels
+const CACHE_TTL_SECONDS = 3600;
+const CACHE_KEY_PREFIX = 'https://gh-contri-api.internal/contributions/';
+const activeFetches = new Map();
 const COLOR_SCHEMES = {
   default: ['#eeeeee', '#d6e685', '#8cc665', '#44a340', '#1e6823'],
   halloween: ['#eeeeee', '#ffee4a', '#ffc501', '#fe9600', '#03001c'],
@@ -154,6 +157,46 @@ const fetchContributionData = async (username) => {
   }
 
   return { contributions, totalContributions };
+};
+
+const getContributionData = async (username) => {
+  const cacheRequest = new Request(
+    `${CACHE_KEY_PREFIX}${encodeURIComponent(username)}`,
+    {
+      method: 'GET',
+    },
+  );
+  const cache = caches.default;
+
+  const cached = await cache.match(cacheRequest);
+  if (cached) {
+    return cached.json();
+  }
+
+  const inFlight = activeFetches.get(username);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const requestPromise = (async () => {
+    try {
+      const data = await fetchContributionData(username);
+      const response = new Response(JSON.stringify(data), {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': `public, max-age=${CACHE_TTL_SECONDS}`,
+        },
+      });
+      await cache.put(cacheRequest, response.clone());
+      return data;
+    } finally {
+      activeFetches.delete(username);
+    }
+  })();
+
+  activeFetches.set(username, requestPromise);
+
+  return requestPromise;
 };
 
 const buildWeeks = (contributions) => {
@@ -332,7 +375,7 @@ export default {
       }
 
       const scheme = buildScheme(baseColor, backgroundColor);
-      const { contributions, totalContributions } = await fetchContributionData(username);
+      const { contributions, totalContributions } = await getContributionData(username);
       const weeks = buildWeeks(contributions);
 
       if (!weeks.length) {
