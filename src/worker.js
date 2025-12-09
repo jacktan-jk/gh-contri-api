@@ -1,8 +1,31 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const CELL_SIZE = 10;
 const CELL_GAP = 2;
-const LEFT_PADDING = 16;
-const TOP_PADDING = 32;
+const WEEKDAY_LABEL_WIDTH = 28;
+const LEFT_PADDING = WEEKDAY_LABEL_WIDTH + 8;
+const HEADER_HEIGHT = 32;
+const MONTH_LABEL_HEIGHT = 20;
+const MONTH_LABEL_Y = HEADER_HEIGHT + 14;
+const TOP_PADDING = HEADER_HEIGHT + MONTH_LABEL_HEIGHT;
+const WEEKDAY_LABELS = [
+  { index: 1, label: 'Mon' },
+  { index: 3, label: 'Wed' },
+  { index: 5, label: 'Fri' },
+];
+const MONTH_NAMES = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
 const COLOR_SCHEMES = {
   default: ['#eeeeee', '#d6e685', '#8cc665', '#44a340', '#1e6823'],
   halloween: ['#eeeeee', '#ffee4a', '#ffc501', '#fe9600', '#03001c'],
@@ -96,16 +119,23 @@ const fetchContributionData = async (username) => {
   }
 
   const html = await response.text();
-  const cells = [...html.matchAll(/data-date="([0-9]{4}-[0-9]{2}-[0-9]{2})"[^>]*data-level="([0-4])"/g)];
-  const contributions = cells.map(([_, date, level]) => ({
+  const cells = [
+    ...html.matchAll(
+      /data-date="([0-9]{4}-[0-9]{2}-[0-9]{2})"(?=[^>]*data-level="([0-4])")(?=[^>]*data-count="(\d+)")/g,
+    ),
+  ];
+  const contributions = cells.map(([_, date, level, count]) => ({
     date,
     level: Number(level),
+    contributionCount: Number(count),
   }));
 
   contributions.sort((a, b) => a.date.localeCompare(b.date));
 
-  const totalMatch = html.match(/(\d+)\s+contributions?\s+in\s+the\s+last\s+year/i);
-  const totalContributions = totalMatch ? Number(totalMatch[1]) : contributions.filter((day) => day.level > 0).length;
+  const totalContributions = contributions.reduce(
+    (sum, { contributionCount }) => sum + (Number.isFinite(contributionCount) ? contributionCount : 0),
+    0,
+  );
 
   return { contributions, totalContributions };
 };
@@ -126,7 +156,7 @@ const buildWeeks = (contributions) => {
     for (let offset = 0; offset < 7; offset += 1) {
       const current = addDays(cursor, offset);
       const dateKey = current.toISOString().slice(0, 10);
-      week.push(byDate.get(dateKey) ?? { date: dateKey, level: 0 });
+      week.push(byDate.get(dateKey) ?? { date: dateKey, level: 0, contributionCount: 0 });
     }
     weeks.push(week);
     cursor = addDays(cursor, 7);
@@ -150,6 +180,32 @@ const renderLegend = (scheme, x, y) => {
       <text x="${x + scheme.length * (CELL_SIZE + 2) + 4}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#FFFFFF">${labels[1]}</text>
     </g>`;
 };
+
+const renderMonthLabels = (weeks) => {
+  let lastMonth;
+
+  return weeks
+    .map((week, index) => {
+      const hasFirstDay = week.some((day) => new Date(day.date).getUTCDate() === 1);
+      if (!hasFirstDay) return '';
+
+      const month = new Date(week[0].date).getUTCMonth();
+      if (lastMonth === month) return '';
+      lastMonth = month;
+
+      const x = LEFT_PADDING + index * (CELL_SIZE + CELL_GAP);
+      return `<text x="${x}" y="${MONTH_LABEL_Y}" font-size="10" font-family="'Segoe UI', Tahoma, sans-serif" fill="#AAAAAA">${
+        MONTH_NAMES[month]
+      }</text>`;
+    })
+    .join('');
+};
+
+const renderWeekdayLabels = () =>
+  WEEKDAY_LABELS.map(({ index, label }) => {
+    const y = TOP_PADDING + index * (CELL_SIZE + CELL_GAP) + 8;
+    return `<text x="${LEFT_PADDING - 6}" y="${y}" font-size="10" font-family="'Segoe UI', Tahoma, sans-serif" fill="#AAAAAA" text-anchor="end">${label}</text>`;
+  }).join('');
 
 const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
   const graphWidth = weeks.length * (CELL_SIZE + CELL_GAP);
@@ -177,9 +233,10 @@ const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}">
-  <title>${label}</title>
   <rect width="100%" height="100%" fill="transparent" />
-  <text x="${LEFT_PADDING}" y="30" font-size="18" font-family="'Segoe UI', Tahoma, sans-serif" fill="#FFFFFF">${totalContributions} contributions in the last year</text>
+  <text x="${LEFT_PADDING}" y="20" font-size="18" font-family="'Segoe UI', Tahoma, sans-serif" fill="#FFFFFF">${totalContributions} contributions in the last year</text>
+  ${renderMonthLabels(weeks)}
+  ${renderWeekdayLabels()}
   ${cells}
   ${renderLegend(scheme, legendX, legendY)}
 </svg>`;
@@ -196,6 +253,10 @@ export default {
     try {
       const { pathname } = new URL(request.url);
       let parts = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean);
+
+      if (pathname === '/favicon.ico') {
+        return new Response(null, { status: 204 });
+      }
 
       if (!parts.length) {
         const usage = 'Use /<user> or /<base>/<bg>/<user> to render a chart.';
