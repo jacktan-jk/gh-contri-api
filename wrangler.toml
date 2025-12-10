@@ -1,6 +1,7 @@
 name = "gh-contri-api"
 main = "src/worker.js"
 compatibility_date = "2024-05-29"
+minify = true
 
 [observability]
 enabled = false
@@ -16,6 +17,3 @@ invocation_logs = true
 enabled = false
 persist = true
 head_sampling_rate = 1
-
-[build]
-minify = true

@@ -2,7 +2,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const CELL_SIZE = 10;
 const CELL_GAP = 2;
 const LEFT_PADDING = 30;
-const TOP_PADDING = 56; // increased to give space for header + month labels
+const TOP_PADDING = 45; // increased to give space for header + month labels
 const COLOR_SCHEMES = {
   default: ['#eeeeee', '#d6e685', '#8cc665', '#44a340', '#1e6823'],
   halloween: ['#eeeeee', '#ffee4a', '#ffc501', '#fe9600', '#03001c'],
@@ -69,7 +69,7 @@ const buildScheme = (baseColor, backgroundColor) => {
     lightenColor(base, 0.3),
     lightenColor(base, 0.2),
     base,
-    darkenColor(base, 0.8),
+    darkenColor(base, 0.7),
   ];
 };
 
@@ -228,9 +228,9 @@ const renderLegend = (scheme, x, y) => {
 
   return `
     <g aria-hidden="true">
-      <text x="${x - 36}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${labels[0]}</text>
+      <text x="${x - 22}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${labels[0]}</text>
       ${blocks}
-      <text x="${x + scheme.length * (CELL_SIZE + 2) + 4}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${labels[1]}</text>
+      <text x="${x + scheme.length * (CELL_SIZE + 2) + 2}" y="${y + 9}" font-size="9" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${labels[1]}</text>
     </g>`;
 };
 
@@ -292,7 +292,7 @@ const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
   const graphWidth = weeks.length * (CELL_SIZE + CELL_GAP);
   const graphHeight = 7 * (CELL_SIZE + CELL_GAP);
   const width = LEFT_PADDING + graphWidth;
-  const height = TOP_PADDING + graphHeight + 28;
+  const height = TOP_PADDING + graphHeight + 22;
 
   const cells = weeks
     .map((week, weekIndex) =>
@@ -317,8 +317,8 @@ const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${label}">
-  <rect width="100%" height="100%" fill="transparent" />
-  <text x="0" y="25" font-size="12" font-weight="bold" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${totalContributions} contributions in the last year</text>
+  <rect width="100%" height="100%" fill="black" />
+  <text x="0" y="12" font-size="14" font-weight="bold" font-family="'Segoe UI', Tahoma, sans-serif" fill="#d6d6d6">${totalContributions} contributions in the last year</text>
   ${monthLabels}
   ${dayLabels}
   ${cells}
