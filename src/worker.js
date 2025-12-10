@@ -460,4 +460,27 @@ export default {
       return sendError(error.message, /Invalid .*color/.test(error.message) ? 400 : 500);
     }
   },
+
+  async scheduled(event, env, ctx) {
+    const keepAliveUrl =
+      'https://gitchart.tanjunkiat.dev/978934/393937/jacktan-jk';
+
+    ctx.waitUntil(
+      (async () => {
+        try {
+          const res = await fetch(keepAliveUrl, {
+            headers: {
+              'User-Agent': 'gh-contri-api-worker-cron',
+              Accept: 'image/svg+xml',
+            },
+          });
+          // Drain the body so the connection is properly closed
+          await res.arrayBuffer();
+        } catch (err) {
+          // Optional: visible in Wrangler tail / dashboard logs
+          console.error('Cron keepalive failed', err);
+        }
+      })(),
+    );
+  },
 };
