@@ -6,13 +6,51 @@ Cloudflare Worker that merges the functionality of the original `githubchart-api
 
 Deploy the worker and access it with the following URL format:
 
-```
-https://ghchart.<worker>.dev/<BASE-COLOR>/<BG-COLOR>/<USER>
+```text
+https://gitchart.tanjunkiat.dev/<BASE-COLOR>/<BG-COLOR>/<USER>
 ```
 
-- `BASE-COLOR` and `BG-COLOR` are optional hexadecimal color strings (3 or 6 characters). If omitted, the default GitHub palette is used.
-- Preset names `default`, `halloween`, and `teal` match the legacy API behavior.
-- Example: `https://ghchart.example.dev/409ba5/222222/octocat`
+* `BASE-COLOR` and `BG-COLOR` are optional hexadecimal color strings (3 or 6 characters).
+* If both are omitted, the default GitHub-like palette is used.
+* Preset names `default`, `halloween`, and `teal` mirror the legacy API behavior.
+
+The worker code lives in `gh-contri-api/src/worker.js` and renders the SVG by scraping public GitHub contribution data. Color schemes mirror the original Ruby API, including custom base/background combinations and preset palettes.
+
+## Example charts
+
+Below are some sample charts rendered through the worker using the `jacktan-jk` account. You can use these as references for color configuration.
+
+### Default palette on dark background
+
+```text
+https://gitchart.tanjunkiat.dev/jacktan-jk
+```
+
+![Default palette on dark background](https://gitchart.tanjunkiat.dev/default/393937/jacktan-jk)
+
+### Teal palette on dark background
+
+```text
+https://gitchart.tanjunkiat.dev/teal/jacktan-jk
+```
+
+![Teal palette on dark background](https://gitchart.tanjunkiat.dev/teal/393937/jacktan-jk)
+
+### Halloween palette on dark background
+
+```text
+https://gitchart.tanjunkiat.dev/halloween/jacktan-jk
+```
+
+![Halloween palette on dark background](https://gitchart.tanjunkiat.dev/halloween/393937/jacktan-jk)
+
+### Custom base/background colors
+
+```text
+https://gitchart.tanjunkiat.dev/978934/393937/jacktan-jk
+```
+
+![Custom colors (base 978934, bg 393937)](https://gitchart.tanjunkiat.dev/978934/393937/jacktan-jk)
 
 ## Development
 
@@ -35,4 +73,12 @@ npm run check
 wrangler publish
 ```
 
-The worker code lives in `gh-contri-api/src/worker.js` and renders the SVG by scraping public GitHub contribution data. Color schemes mirror the original Ruby API, including custom base/background combinations and preset palettes.
+## Credits
+
+This project combines ideas and behavior from:
+
+* [`githubchart-api`](https://github.com/2016rshah/githubchart-api) – original Ruby API that returns GitHub-style contribution charts as SVG.
+* `githubchart` (Ruby gem) – underlying chart-generation library used by the original API.
+* [`deno-github-contributions-api`](https://github.com/kawarimidoll/deno-github-contributions-api) – Deno-based API for fetching GitHub contribution data.
+
+All trademarks and GitHub logos or styles are the property of their respective owners. This project is not affiliated with or endorsed by GitHub.
