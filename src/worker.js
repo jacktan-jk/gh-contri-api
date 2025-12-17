@@ -86,9 +86,46 @@ const addDays = (date, days) => new Date(date.getTime() + days * DAY_MS);
 
 const CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 const CACHE_REVALIDATE_MS = 30 * 60 * 1000;
+const CACHE_MAX_ENTRIES = 256;
 
 const contributionCache = new Map();
 const svgCache = new Map();
+
+const removeExpiredEntries = (cache, now, getTimestamp) => {
+  for (const [key, value] of cache) {
+    if (now - getTimestamp(value) >= CACHE_MAX_AGE_MS) {
+      cache.delete(key);
+    }
+  }
+};
+
+const enforceCacheLimit = (cache) => {
+  while (cache.size > CACHE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    cache.delete(oldestKey);
+  }
+};
+
+const getCachedEntry = (cache, key, now, getTimestamp) => {
+  const entry = cache.get(key);
+
+  if (!entry) return null;
+
+  if (now - getTimestamp(entry) >= CACHE_MAX_AGE_MS) {
+    cache.delete(key);
+    return null;
+  }
+
+  cache.delete(key);
+  cache.set(key, entry);
+  return entry;
+};
+
+const setCachedEntry = (cache, key, value, now, getTimestamp) => {
+  removeExpiredEntries(cache, now, getTimestamp);
+  cache.set(key, value);
+  enforceCacheLimit(cache);
+};
 
 const fetchContributionData = async (username) => {
   const url = `https://github.com/users/${encodeURIComponent(
@@ -163,14 +200,24 @@ const fetchContributionData = async (username) => {
 };
 
 const getContributionData = async (username) => {
-  const cached = contributionCache.get(username);
+  const now = Date.now();
+  const cached = getCachedEntry(
+    contributionCache,
+    username,
+    now,
+    (entry) => entry.fetchedAt,
+  );
 
   const recordWithMeta = (data, fetchedAt, cacheStatus) => {
-    contributionCache.set(username, { data, fetchedAt });
+    setCachedEntry(
+      contributionCache,
+      username,
+      { data, fetchedAt },
+      now,
+      (entry) => entry.fetchedAt,
+    );
     return { ...data, fetchedAt, cacheStatus };
   };
-
-  const now = Date.now();
 
   if (cached) {
     const age = now - cached.fetchedAt;
@@ -392,7 +439,12 @@ export default {
       const scheme = buildScheme(baseColor, backgroundColor);
       const cacheKey = buildSvgCacheKey({ baseColor, backgroundColor, username });
       const now = Date.now();
-      const cachedSvg = svgCache.get(cacheKey);
+      const cachedSvg = getCachedEntry(
+        svgCache,
+        cacheKey,
+        now,
+        (entry) => entry.generatedAt,
+      );
 
       if (cachedSvg) {
         const svgAge = now - cachedSvg.generatedAt;
@@ -442,12 +494,18 @@ export default {
       const generatedAt = Date.now();
       const svgCacheStatus = cachedSvg ? 'refreshed' : 'miss';
 
-      svgCache.set(cacheKey, {
-        svg,
-        generatedAt,
-        dataFetchedAt: fetchedAt,
-        dataCacheStatus,
-      });
+      setCachedEntry(
+        svgCache,
+        cacheKey,
+        {
+          svg,
+          generatedAt,
+          dataFetchedAt: fetchedAt,
+          dataCacheStatus,
+        },
+        now,
+        (entry) => entry.generatedAt,
+      );
 
       return buildSvgResponse({
         svg,
