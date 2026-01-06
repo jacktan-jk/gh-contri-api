@@ -307,7 +307,7 @@ const renderMonthLabels = (weeks) => {
     const firstDay = week[0];
     const d = new Date(firstDay.date);
     const month = d.getUTCMonth();
-    if (month !== lastMonth) {
+    if (month !== lastMonth && parts.length < 12) {
       const baseX = LEFT_PADDING + weekIndex * (CELL_SIZE + CELL_GAP) - 5;
       const x = weekIndex === weeks.length - 1 ? baseX - 5 : baseX;
       parts.push(
