@@ -382,6 +382,7 @@ const buildSvgResponse = ({
   svgGeneratedAt,
   dataFetchedAt,
   dataCacheStatus,
+  totalContributions,
 }) =>
   new Response(svg, {
     headers: {
@@ -391,6 +392,7 @@ const buildSvgResponse = ({
       'X-SVG-Generated-At': new Date(svgGeneratedAt).toISOString(),
       'X-Data-Cache': dataCacheStatus,
       'X-Data-Fetched-At': new Date(dataFetchedAt).toISOString(),
+      'X-Total-Contributions': (totalContributions != null && Number.isFinite(totalContributions)) ? String(totalContributions) : 'NA',
     },
   });
 
@@ -456,6 +458,7 @@ export default {
             svgGeneratedAt: cachedSvg.generatedAt,
             dataFetchedAt: cachedSvg.dataFetchedAt,
             dataCacheStatus: cachedSvg.dataCacheStatus,
+            totalContributions: cachedSvg.totalContributions,
           });
         }
       }
@@ -479,6 +482,7 @@ export default {
             svgGeneratedAt: cachedSvg.generatedAt,
             dataFetchedAt: cachedSvg.dataFetchedAt,
             dataCacheStatus: cachedSvg.dataCacheStatus,
+            totalContributions: cachedSvg.totalContributions,
           });
         }
         throw error;
@@ -502,6 +506,7 @@ export default {
           generatedAt,
           dataFetchedAt: fetchedAt,
           dataCacheStatus,
+          totalContributions,
         },
         now,
         (entry) => entry.generatedAt,
@@ -513,6 +518,7 @@ export default {
         svgGeneratedAt: generatedAt,
         dataFetchedAt: fetchedAt,
         dataCacheStatus,
+        totalContributions,
       });
     } catch (error) {
       return sendError(error.message, /Invalid .*color/.test(error.message) ? 400 : 500);
