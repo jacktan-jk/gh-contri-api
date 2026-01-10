@@ -376,6 +376,14 @@ const renderSvg = ({ weeks, scheme, username, totalContributions }) => {
 const buildSvgCacheKey = ({ baseColor, backgroundColor, username }) =>
   [baseColor || 'default', backgroundColor || 'bg', username].join('|');
 
+const addCorsHeaders = (headers) => {
+  headers.set('Access-Control-Allow-Origin', '*');
+  headers.set('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  headers.set('Access-Control-Expose-Headers', 'X-Total-Contributions');
+  headers.set('Access-Control-Max-Age', '86400');
+  return headers;
+};
+
 const buildSvgResponse = ({
   svg,
   svgCacheStatus,
@@ -383,36 +391,67 @@ const buildSvgResponse = ({
   dataFetchedAt,
   dataCacheStatus,
   totalContributions,
-}) =>
-  new Response(svg, {
-    headers: {
-      'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': 'public, max-age=3600',
-      'X-SVG-Cache': svgCacheStatus,
-      'X-SVG-Generated-At': new Date(svgGeneratedAt).toISOString(),
-      'X-Data-Cache': dataCacheStatus,
-      'X-Data-Fetched-At': new Date(dataFetchedAt).toISOString(),
-      'X-Total-Contributions': (totalContributions != null && Number.isFinite(totalContributions)) ? String(totalContributions) : 'NA',
-    },
+  isHeadRequest = false,
+}) => {
+  const headers = new Headers({
+    'Content-Type': 'image/svg+xml; charset=utf-8',
+    'Cache-Control': 'public, max-age=3600',
+    'X-SVG-Cache': svgCacheStatus,
+    'X-SVG-Generated-At': new Date(svgGeneratedAt).toISOString(),
+    'X-Data-Cache': dataCacheStatus,
+    'X-Data-Fetched-At': new Date(dataFetchedAt).toISOString(),
+    'X-Total-Contributions': (totalContributions != null && Number.isFinite(totalContributions)) ? String(totalContributions) : 'NA',
   });
 
-const sendError = (message, status = 500) =>
-  new Response(message, {
-    status,
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  addCorsHeaders(headers);
+
+  return new Response(isHeadRequest ? null : svg, { headers });
+};
+
+const sendError = (message, status = 500) => {
+  const headers = new Headers({
+    'Content-Type': 'text/plain; charset=utf-8',
   });
+
+  addCorsHeaders(headers);
+
+  return new Response(message, { status, headers });
+};
 
 export default {
   async fetch(request) {
     try {
       const { pathname } = new URL(request.url);
+      const method = request.method.toUpperCase();
 
-      if (pathname === '/favicon.ico') {
+      // Handle OPTIONS preflight requests
+      if (method === 'OPTIONS') {
         return new Response(null, {
           status: 204,
           headers: {
-            'Cache-Control': 'public, max-age=86400',
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+            'Access-Control-Allow-Headers': '*',
+            'Access-Control-Max-Age': '86400',
           },
+        });
+      }
+
+      // Only allow GET and HEAD methods
+      if (method !== 'GET' && method !== 'HEAD') {
+        return sendError('Method not allowed', 405);
+      }
+
+      const isHeadRequest = method === 'HEAD';
+
+      if (pathname === '/favicon.ico') {
+        const headers = new Headers({
+          'Cache-Control': 'public, max-age=86400',
+        });
+        addCorsHeaders(headers);
+        return new Response(null, {
+          status: 204,
+          headers,
         });
       }
 
@@ -420,8 +459,12 @@ export default {
 
       if (!parts.length) {
         const usage = 'Use /<user> or /<base>/<bg>/<user> to render a chart.';
-        return new Response(`${usage}\nExample: /409ba5/222222/octocat`, {
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        const headers = new Headers({
+          'Content-Type': 'text/plain; charset=utf-8',
+        });
+        addCorsHeaders(headers);
+        return new Response(isHeadRequest ? null : `${usage}\nExample: /409ba5/222222/octocat`, {
+          headers,
         });
       }
 
@@ -459,6 +502,7 @@ export default {
             dataFetchedAt: cachedSvg.dataFetchedAt,
             dataCacheStatus: cachedSvg.dataCacheStatus,
             totalContributions: cachedSvg.totalContributions,
+            isHeadRequest,
           });
         }
       }
@@ -483,6 +527,7 @@ export default {
             dataFetchedAt: cachedSvg.dataFetchedAt,
             dataCacheStatus: cachedSvg.dataCacheStatus,
             totalContributions: cachedSvg.totalContributions,
+            isHeadRequest,
           });
         }
         throw error;
@@ -519,6 +564,7 @@ export default {
         dataFetchedAt: fetchedAt,
         dataCacheStatus,
         totalContributions,
+        isHeadRequest,
       });
     } catch (error) {
       return sendError(error.message, /Invalid .*color/.test(error.message) ? 400 : 500);
